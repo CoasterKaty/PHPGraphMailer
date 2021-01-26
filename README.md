@@ -1,4 +1,4 @@
-#PHP Graph Mailer
+# PHP Graph Mailer
 
 Katy Nicholson
 https://katystech.blog/
