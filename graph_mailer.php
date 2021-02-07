@@ -148,24 +148,24 @@ class graphMailer {
 
     function sendDeleteRequest($URL) {
         $ch = curl_init($URL);
-            curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
         curl_setopt($ch, CURLOPT_HTTPHEADER, array('Authorization: Bearer ' . $this->Token, 'Content-Type: application/json'));
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            $response = curl_exec($ch);
-            curl_close($ch);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        $response = curl_exec($ch);
+        curl_close($ch);
         echo $response;
     }
 
     function sendPostRequest($URL, $Fields, $Headers = false) {
         $ch = curl_init($URL);
-            curl_setopt($ch, CURLOPT_POST, 1);
-            if ($Fields) curl_setopt($ch, CURLOPT_POSTFIELDS, $Fields);
+        curl_setopt($ch, CURLOPT_POST, 1);
+        if ($Fields) curl_setopt($ch, CURLOPT_POSTFIELDS, $Fields);
         if ($Headers) {
             $Headers[] = 'Authorization: Bearer ' . $this->Token;
             curl_setopt($ch, CURLOPT_HTTPHEADER, $Headers);
         }
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            $response = curl_exec($ch);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        $response = curl_exec($ch);
         $responseCode = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
         curl_close($ch);
         return array('code' => $responseCode, 'data' => $response);
@@ -174,9 +174,9 @@ class graphMailer {
     function sendGetRequest($URL) {
         $ch = curl_init($URL);
         curl_setopt($ch, CURLOPT_HTTPHEADER, array('Authorization: Bearer ' . $this->Token, 'Content-Type: application/json'));
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            $response = curl_exec($ch);
-            curl_close($ch);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        $response = curl_exec($ch);
+        curl_close($ch);
         return $response;
     }
 }
