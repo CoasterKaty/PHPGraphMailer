@@ -15,19 +15,18 @@ class graphMailer {
     var $baseURL;
 
     function __construct($sTenantID, $sClientID, $sClientSecret) {
-            $this->tenantID = $sTenantID;
-            $this->clientID = $sClientID;
-            $this->clientSecret = $sClientSecret;
+        $this->tenantID = $sTenantID;
+        $this->clientID = $sClientID;
+        $this->clientSecret = $sClientSecret;
         $this->baseURL = 'https://graph.microsoft.com/v1.0/';
         $this->Token = $this->getToken();
     }
 
     function getToken() {
-            $oauthRequest = 'client_id=' . $this->clientID . '&scope=https%3A%2F%2Fgraph.microsoft.com%2F.default&client_secret=' . $this->clientSecret . '&grant_type=client_credentials';
+        $oauthRequest = 'client_id=' . $this->clientID . '&scope=https%3A%2F%2Fgraph.microsoft.com%2F.default&client_secret=' . $this->clientSecret . '&grant_type=client_credentials';
         $reply = $this->sendPostRequest('https://login.microsoftonline.com/' . $this->tenantID . '/oauth2/v2.0/token', $oauthRequest);
-            $reply = json_decode($reply['data']);
-            return $reply->access_token;
-
+        $reply = json_decode($reply['data']);
+        return $reply->access_token;
     }
 
     function getMessages($mailbox) {
@@ -180,5 +179,4 @@ class graphMailer {
         return $response;
     }
 }
-
 ?>
