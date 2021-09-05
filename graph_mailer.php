@@ -6,177 +6,214 @@
  *
  *   https://katystech.blog/2020/08/php-graph-mailer/
  */
+
+class graphMailerException extends Exception { }
+
 class graphMailer {
 
-    var $tenantID;
-    var $clientID;
-    var $clientSecret;
-    var $Token;
-    var $baseURL;
+    private $tenantID;
+    private $clientID;
+    private $clientSecret;
+    private $baseURL;
+    private $Token;
 
-    function __construct($sTenantID, $sClientID, $sClientSecret) {
-        $this->tenantID = $sTenantID;
-        $this->clientID = $sClientID;
+    function __construct($sTenantID,$sClientID,$sClientSecret) {
+        $this->tenantID     = $sTenantID;
+        $this->clientID     = $sClientID;
         $this->clientSecret = $sClientSecret;
-        $this->baseURL = 'https://graph.microsoft.com/v1.0/';
-        $this->Token = $this->getToken();
+        $this->baseURL      = 'https://graph.microsoft.com/v1.0/';
+        $this->Token        = $this->getToken();
     }
 
     function getToken() {
-        $oauthRequest = 'client_id=' . $this->clientID . '&scope=https%3A%2F%2Fgraph.microsoft.com%2F.default&client_secret=' . $this->clientSecret . '&grant_type=client_credentials';
-        $reply = $this->sendPostRequest('https://login.microsoftonline.com/' . $this->tenantID . '/oauth2/v2.0/token', $oauthRequest);
+        $oauthRequest = http_build_query([
+          'client_id'   => $this->clientID,
+          'scope'       => 'https://graph.microsoft.com/.default&client_secret='.$this->clientSecret,
+          'grant_type'  => 'client_credentials',
+        ],NULL,'&amp;');
+        $reply = $this->sendPostRequest('https://login.microsoftonline.com/'.$this->tenantID.'/oauth2/v2.0/token',$oauthRequest);
         $reply = json_decode($reply['data']);
         return $reply->access_token;
     }
 
     function getMessages($mailbox) {
-        if (!$this->Token) {
-            throw new Exception('No token defined');
-        }
-        $messageList = json_decode($this->sendGetRequest($this->baseURL . 'users/' . $mailbox . '/mailFolders/Inbox/Messages'));
+        if (!$this->Token) { throw new graphMailerException('No token defined'); }
+        $messageList = json_decode($this->sendGetRequest($this->baseURL.'users/'.$mailbox.'/mailFolders/Inbox/Messages'));
         if ($messageList->error) {
-            throw new Exception($messageList->error->code . ' ' . $messageList->error->message);
+            throw new graphMailerException($messageList->error->code.' '.$messageList->error->message);
         }
-        $messageArray = array();
+        $messageArray = [];
 
         foreach ($messageList->value as $mailItem) {
-            $attachments = (json_decode($this->sendGetRequest($this->baseURL . 'users/' . $mailbox . '/messages/' . $mailItem->id . '/attachments')))->value;
-            if (count($attachments) < 1) unset($attachments);
+            $attachments = (json_decode($this->sendGetRequest($this->baseURL.'users/'.$mailbox.'/messages/'.$mailItem->id.'/attachments')))->value;
+            if (count($attachments) < 1) { $attachments = []; }
             foreach ($attachments as $attachment) {
                 if ($attachment->{'@odata.type'} == '#microsoft.graph.referenceAttachment') {
                     $attachment->contentBytes = base64_encode('This is a link to a SharePoint online file, not yet supported');
                     $attachment->isInline = 0;
                 }
             }
-            $messageArray[] = array('id' => $mailItem->id,
-                        'sentDateTime' => $mailItem->sentDateTime,
-                        'subject' => $mailItem->subject,
-                        'bodyPreview' => $mailItem->bodyPreview,
-                        'importance' => $mailItem->importance,
-                        'conversationId' => $mailItem->conversationId,
-                        'isRead' => $mailItem->isRead,
-                        'body' => $mailItem->body,
-                        'sender' => $mailItem->sender,
-                        'toRecipients' => $mailItem->toRecipients,
-                        'ccRecipients' => $mailItem->ccRecipients,
-                        'toRecipientsBasic' => $this->basicAddress($mailItem->toRecipients),
-                        'ccRecipientsBasic' => $this->basicAddress($mailItem->ccRecipients),
-                        'replyTo' => $mailItem->replyTo,
-                        'attachments' => $attachments);
+            $messageArray[] = [
+              'id'                  => $mailItem->id,
+              'sentDateTime'        => $mailItem->sentDateTime,
+              'subject'             => $mailItem->subject,
+              'bodyPreview'         => $mailItem->bodyPreview,
+              'importance'          => $mailItem->importance,
+              'conversationId'      => $mailItem->conversationId,
+              'isRead'              => $mailItem->isRead,
+              'body'                => $mailItem->body,
+              'sender'              => $mailItem->sender,
+              'toRecipients'        => $mailItem->toRecipients,
+              'ccRecipients'        => $mailItem->ccRecipients,
+              'toRecipientsBasic'   => $this->basicAddress($mailItem->toRecipients),
+              'ccRecipientsBasic'   => $this->basicAddress($mailItem->ccRecipients),
+              'replyTo'             => $mailItem->replyTo,
+              'attachments'         => $attachments,
+            ];
 
         }
         return $messageArray;
     }
 
-    function deleteEmail($mailbox, $id, $moveToDeletedItems = true) {
-        switch ($moveToDeletedItems) {
-            case true:
-                $this->sendPostRequest($this->baseURL . 'users/' . $mailbox . '/messages/' . $id . '/move', '{ "destinationId": "deleteditems" }', array('Content-type: application/json'));
-                break;
-            case false:
-                $this->sendDeleteRequest($this->baseURL . 'users/' . $mailbox . '/messages/' . $id);
-                break;
+    function deleteEmail($mailbox,$id,$moveToDeletedItems = TRUE) {
+        if (!$moveToDeletedItems) { $this->sendDeleteRequest($this->baseURL.'users/'.$mailbox.'/messages/'.$id); } else {
+            $this->sendPostRequest(
+              $this->baseURL.'users/'.$mailbox.'/messages/'.$id.'/move',
+              json_encode(['destinationId' => 'deleteditems']),
+              ['Content-type: application/json']
+            );
         }
     }
 
-    function sendMail($mailbox, $messageArgs ) {
-        if (!$this->Token) {
-            throw new Exception('No token defined');
-        }
+    function sendMail($mailbox,$messageArgs) {
+        if (!$this->Token) { throw new graphMailerException('No token defined'); }
 
         /*
-        $messageArgs[   subject,
-                replyTo{'name', 'address'},
-                toRecipients[]{'name', 'address'},
-                ccRecipients[]{'name', 'address'},
-                importance,
-                conversationId,
-                body,
-                images[],
-                attachments[]
-                ]
+        $mailArgs =  [
+            'subject'       => 'Test message',
+            'replyTo'       => ['address' => 'address@email.com','name' => 'Katy'],
+            'toRecipients'  => [
+                ['address'  => 'address@email.com',  'name' => 'Neil'],         // Name is optional
+                ['address'  => 'address2@email.com', 'name' => 'Someone'],
+             ],
+            'ccRecipients'  => [
+                ['address'      => 'address@email.com', 'name' => 'Neil'],      // Name is optional
+                ['address'      => 'address2@email.com','name' => 'Someone'],
+            ],
+            'importance'     => 'normal',
+            'conversationId' => '', // Optional, use if replying to an existing email to keep them chained properly in outlook
+            'body'           => '<html>Blah blah blah</html>',
+            'images'         => [ // Array of arrays so you can have multiple images. These are inline images. Everything else in attachments.
+                ['Name' => 'blah.jpg','ContentType' => 'image/jpeg','Content' => 'results of file_get_contents(blah.jpg)','ContentID' => 'cid:blah'],
+            ],
+            'attachments'    => [
+                ['Name' => 'blah.pdf', 'ContentType' => 'application/pdf', 'Content' => 'results of file_get_contents(blah.pdf)'],
+            ]
+        ];
 
+        $graphMailer = new graphMailer($sTenantID,$sClientID,$sClientSecret);
+        $graphMailer->sendMail('helpdesk@contoso.com',$mailArgs);
+        unset($graphMailer);
         */
 
-        foreach ($messageArgs['toRecipients'] as $recipient) {
-            if ($recipient['name']) {
-                $messageArray['toRecipients'][] = array('emailAddress' => array('name' => $recipient['name'], 'address' => $recipient['address']));
-            } else {
-                $messageArray['toRecipients'][] = array('emailAddress' => array('address' => $recipient['address']));
+        $messageArray = [];
+        foreach(['toRecipients','ccRecipients'] as $arr) {
+            foreach($messageArgs[$arr] as $recipient) {
+                $add = ['emailAddress' => ['address' => $recipient['address']]];
+                if ($recipient['name']) { $add['emailAddress']['name'] = $recipient['name']; }
+                $messageArray[$arr][] = $add;
             }
         }
-        foreach ($messageArgs['ccRecipients'] as $recipient) {
-            if ($recipient['name']) {
-                $messageArray['ccRecipients'][] = array('emailAddress' => array('name' => $recipient['name'], 'address' => $recipient['address']));
-            } else {
-                $messageArray['ccRecipients'][] = array('emailAddress' => array('address' => $recipient['address']));
-            }
-        }
-        $messageArray['subject'] = $messageArgs['subject'];
-        $messageArray['importance'] = ($messageArgs['importance'] ? $messageArgs['importance'] : 'normal');
-        if (isset($messageArgs['replyTo'])) $messageArray['replyTo'] = array(array('emailAddress' => array('name' => $messageArgs['replyTo']['name'], 'address' => $messageArgs['replyTo']['address'])));
-        $messageArray['body'] = array('contentType' => 'HTML', 'content' => $messageArgs['body']);
-        $messageJSON = json_encode($messageArray);
-        $response = $this->sendPostRequest($this->baseURL . 'users/' . $mailbox . '/messages', $messageJSON, array('Content-type: application/json'));
 
-        $response = json_decode($response['data']);
-        $messageID = $response->id;
+        $messageArray['subject']    = $messageArgs['subject'];
+        $messageArray['importance'] = ($messageArgs['importance'] ? $messageArgs['importance'] : 'normal');
+        if (isset($messageArgs['replyTo'])) {
+            $messageArray['replyTo'] = [['emailAddress' => ['address' => $messageArgs['replyTo']['address'],'name' => $messageArgs['replyTo']['name']]]];
+        }
+        $messageArray['body']       = ['contentType' => 'HTML','content' => $messageArgs['body']];
+        $response                   = $this->sendPostRequest(
+          $this->baseURL.'users/'.$mailbox.'/messages',
+          json_encode($messageArray),
+          ['Content-type: application/json']
+        );
+
+        $response   = json_decode($response['data']);
+        $messageID  = $response->id;
 
         foreach ($messageArgs['images'] as $image) {
-            $messageJSON = json_encode(array('@odata.type' => '#microsoft.graph.fileAttachment', 'name' => $image['Name'], 'contentBytes' => base64_encode($image['Content']), 'contentType' => $image['ContentType'], 'isInline' => true, 'contentId' => $image['ContentID']));
-            $response = $this->sendPostRequest($this->baseURL . 'users/' . $mailbox . '/messages/' . $messageID . '/attachments', $messageJSON, array('Content-type: application/json'));
+            $messageJSON = json_encode([
+              '@odata.type'     => '#microsoft.graph.fileAttachment',
+              'name'            => $image['Name'],
+              'contentBytes'    => base64_encode($image['Content']),
+              'contentType'     => $image['ContentType'],
+              'isInline'        => TRUE,
+              'contentId'       => $image['ContentID'],
+            ]);
+            $this->sendPostRequest($this->baseURL.'users/'.$mailbox.'/messages/'.$messageID.'/attachments',$messageJSON,['Content-type: application/json']);
         }
 
         foreach ($messageArgs['attachments'] as $attachment) {
-            $messageJSON = json_encode(array('@odata.type' => '#microsoft.graph.fileAttachment', 'name' => $attachment['Name'], 'contentBytes' => base64_encode($attachment['Content']), 'contentType' => $attachment['ContentType'], 'isInline' => false));
-            $response = $this->sendPostRequest($this->baseURL . 'users/' . $mailbox . '/messages/' . $messageID . '/attachments', $messageJSON, array('Content-type: application/json'));
+            $messageJSON = json_encode([
+              '@odata.type'     => '#microsoft.graph.fileAttachment',
+              'name'            => $attachment['Name'],
+              'contentBytes'    => base64_encode($attachment['Content']),
+              'contentType'     => $attachment['ContentType'],
+              'isInline'        => FALSE,
+            ]);
+            $this->sendPostRequest($this->baseURL.'users/'.$mailbox.'/messages/'.$messageID.'/attachments',$messageJSON,['Content-type: application/json']);
         }
-        //Send
-        $response = $this->sendPostRequest($this->baseURL . 'users/' . $mailbox . '/messages/' . $messageID . '/send', '', array('Content-Length: 0'));
-        if ($response['code'] == '202') return true;
-        return false;
 
+        //Send
+        $response = $this->sendPostRequest($this->baseURL.'users/'.$mailbox.'/messages/'.$messageID.'/send','',['Content-Length: 0']);
+        return ((int) $response['code'] == 202);
     }
 
     function basicAddress($addresses) {
-        foreach ($addresses as $address) {
-            $ret[] = $address->emailAddress->address;
-        }
+        $ret = [];
+        foreach ($addresses as $address) { $ret[] = $address->emailAddress->address; }
         return $ret;
     }
 
     function sendDeleteRequest($URL) {
         $ch = curl_init($URL);
-        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Authorization: Bearer ' . $this->Token, 'Content-Type: application/json'));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        $response = curl_exec($ch);
+        curl_setopt_array($ch,[
+            CURLOPT_CUSTOMREQUEST   => 'DELETE',
+            CURLOPT_HTTPHEADER      => ['Authorization: Bearer '.$this->Token,'Content-Type: application/json'],
+            CURLOPT_RETURNTRANSFER  => TRUE,
+        ]);
+        echo curl_exec($ch);
         curl_close($ch);
-        echo $response;
     }
 
-    function sendPostRequest($URL, $Fields, $Headers = false) {
+    function sendPostRequest($URL,$Fields,$Headers = FALSE) {
         $ch = curl_init($URL);
-        curl_setopt($ch, CURLOPT_POST, 1);
-        if ($Fields) curl_setopt($ch, CURLOPT_POSTFIELDS, $Fields);
-        if ($Headers) {
-            $Headers[] = 'Authorization: Bearer ' . $this->Token;
-            curl_setopt($ch, CURLOPT_HTTPHEADER, $Headers);
+        $opts = [
+            CURLOPT_POST            => TRUE,
+            CURLOPT_RETURNTRANSFER  => TRUE,
+        ];
+        if ($Fields)    { $opts[CURLOPT_POSTFIELDS] = $Fields; }
+        if ($Headers)   {
+            $Headers[] = 'Authorization: Bearer '.$this->Token;
+            $opts[CURLOPT_HTTPHEADER] = $Headers;
         }
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt_array($ch,$opts);
+
         $response = curl_exec($ch);
-        $responseCode = curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $responseCode = curl_getinfo($ch,CURLINFO_RESPONSE_CODE);
         curl_close($ch);
-        return array('code' => $responseCode, 'data' => $response);
+        return ['code' => $responseCode,'data' => $response];
     }
 
     function sendGetRequest($URL) {
         $ch = curl_init($URL);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, array('Authorization: Bearer ' . $this->Token, 'Content-Type: application/json'));
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt_array($ch,[
+            CURLOPT_HTTPHEADER      => ['Authorization: Bearer '.$this->Token,'Content-Type: application/json'],
+            CURLOPT_RETURNTRANSFER  => TRUE,
+        ]);
         $response = curl_exec($ch);
         curl_close($ch);
         return $response;
     }
 }
+
 ?>
