@@ -34,18 +34,21 @@ class graphMailer {
             throw new Exception('No token defined');
         }
         $messageList = json_decode($this->sendGetRequest($this->baseURL . 'users/' . $mailbox . '/mailFolders/Inbox/Messages'));
-        if ($messageList->error) {
+        if (isset($messageList->error)) {
             throw new Exception($messageList->error->code . ' ' . $messageList->error->message);
         }
         $messageArray = array();
 
         foreach ($messageList->value as $mailItem) {
             $attachments = (json_decode($this->sendGetRequest($this->baseURL . 'users/' . $mailbox . '/messages/' . $mailItem->id . '/attachments')))->value;
-            if (count($attachments) < 1) unset($attachments);
-            foreach ($attachments as $attachment) {
-                if ($attachment->{'@odata.type'} == '#microsoft.graph.referenceAttachment') {
-                    $attachment->contentBytes = base64_encode('This is a link to a SharePoint online file, not yet supported');
-                    $attachment->isInline = 0;
+            if (count($attachments) < 1) {
+                unset($attachments);
+            } else {
+                foreach ($attachments as $attachment) {
+                    if ($attachment->{'@odata.type'} == '#microsoft.graph.referenceAttachment') {
+                        $attachment->contentBytes = base64_encode('This is a link to a SharePoint online file, not yet supported');
+                        $attachment->isInline = 0;
+                    }
                 }
             }
             $messageArray[] = array('id' => $mailItem->id,
@@ -62,7 +65,7 @@ class graphMailer {
                         'toRecipientsBasic' => $this->basicAddress($mailItem->toRecipients),
                         'ccRecipientsBasic' => $this->basicAddress($mailItem->ccRecipients),
                         'replyTo' => $mailItem->replyTo,
-                        'attachments' => $attachments);
+                        'attachments' => isset($attachments) ? $attachments : null);
 
         }
         return $messageArray;
@@ -139,6 +142,7 @@ class graphMailer {
     }
 
     function basicAddress($addresses) {
+        $ret = [];
         foreach ($addresses as $address) {
             $ret[] = $address->emailAddress->address;
         }
