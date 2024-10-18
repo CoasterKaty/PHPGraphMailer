@@ -26,6 +26,11 @@ class graphMailer {
         $oauthRequest = 'client_id=' . $this->clientID . '&scope=https%3A%2F%2Fgraph.microsoft.com%2F.default&client_secret=' . $this->clientSecret . '&grant_type=client_credentials';
         $reply = $this->sendPostRequest('https://login.microsoftonline.com/' . $this->tenantID . '/oauth2/v2.0/token', $oauthRequest);
         $reply = json_decode($reply['data']);
+
+        if(isset($reply->error)) {
+            throw new Exception($reply->error_description);
+        }
+
         return $reply->access_token;
     }
 
@@ -84,7 +89,7 @@ class graphMailer {
 		}
         return json_encode($messageArray);
 	}
-	
+
 	function getMessage($mailbox, $id, $folder = "") {
 		if ($folder != "") {
 			$response = $this->sendGetRequest($this->baseURL . 'users/' . $mailbox . '/mailFolders/'.$folder.'/messages/' . $id);
@@ -181,14 +186,14 @@ class graphMailer {
 		$response = $this->sendGetRequest($this->baseURL .'users/'.$mailbox.'/mailFolders?$select=displayName&$top=100');
 		$folderList = json_decode($response)->value;
 		foreach ($folderList as $folder) {
-//echo $folder->displayName.PHP_EOL;
+            //echo $folder->displayName.PHP_EOL;
 			if ($folder->displayName == $folderName) {
 				return $folder->id;
 			}
 		}
 		// Now try subfolders
 		foreach ($folderList as $folder) {
-//echo $folder->displayName.PHP_EOL;
+            //echo $folder->displayName.PHP_EOL;
 			$response = $this->sendGetRequest($this->baseURL .'users/'.$mailbox.'/mailFolders/'.$folder->id.'/childFolders?$select=displayName&$top=100');
 			$childFolderList = json_decode($response)->value;
 			foreach ($childFolderList as $childFolder) {
@@ -230,9 +235,13 @@ class graphMailer {
 		return True;
     }
 
-    function sendMail($mailbox, $messageArgs, $deleteAfterSend ) {
+    function sendMail($mailbox, $messageArgs, $deleteAfterSend = null ) {
         if (!$this->Token) {
             throw new Exception('No token defined');
+        }
+
+        if($deleteAfterSend === null) {
+            throw new Exception('Argument deleteAfterSend (true|false) is required');
         }
 
         /*
@@ -254,14 +263,18 @@ class graphMailer {
         $responsedata = json_decode($response['data']);
         $messageID = $responsedata->id;
 
-        foreach ($messageArgs['images'] as $image) {
-            $messageJSON = json_encode(array('@odata.type' => '#microsoft.graph.fileAttachment', 'name' => $image['Name'], 'contentBytes' => base64_encode($image['Content']), 'contentType' => $image['ContentType'], 'isInline' => true, 'contentId' => $image['ContentID']));
-            $response = $this->sendPostRequest($this->baseURL . 'users/' . $mailbox . '/messages/' . $messageID . '/attachments', $messageJSON, array('Content-type: application/json'));
+        if(isset($messageArgs['images'])) {
+            foreach ($messageArgs['images'] as $image) {
+                $messageJSON = json_encode(array('@odata.type' => '#microsoft.graph.fileAttachment', 'name' => $image['Name'], 'contentBytes' => base64_encode($image['Content']), 'contentType' => $image['ContentType'], 'isInline' => true, 'contentId' => $image['ContentID']));
+                $response = $this->sendPostRequest($this->baseURL . 'users/' . $mailbox . '/messages/' . $messageID . '/attachments', $messageJSON, array('Content-type: application/json'));
+            }
         }
 
-        foreach ($messageArgs['attachments'] as $attachment) {
-            $messageJSON = json_encode(array('@odata.type' => '#microsoft.graph.fileAttachment', 'name' => $attachment['Name'], 'contentBytes' => base64_encode($attachment['Content']), 'contentType' => $attachment['ContentType'], 'isInline' => false));
-            $response = $this->sendPostRequest($this->baseURL . 'users/' . $mailbox . '/messages/' . $messageID . '/attachments', $messageJSON, array('Content-type: application/json'));
+        if(isset($messageArgs['attachments'])) {
+            foreach ($messageArgs['attachments'] as $attachment) {
+                $messageJSON = json_encode(array('@odata.type' => '#microsoft.graph.fileAttachment', 'name' => $attachment['Name'], 'contentBytes' => base64_encode($attachment['Content']), 'contentType' => $attachment['ContentType'], 'isInline' => false));
+                $response = $this->sendPostRequest($this->baseURL . 'users/' . $mailbox . '/messages/' . $messageID . '/attachments', $messageJSON, array('Content-type: application/json'));
+            }
         }
         //Send
         $response = $this->sendPostRequest($this->baseURL . 'users/' . $mailbox . '/messages/' . $messageID . '/send', '', array('Content-Length: 0'));
@@ -292,7 +305,7 @@ class graphMailer {
 		}
 		return $messageId;
 	}
-	
+
 	function updateMessage($mailbox, $id, $Fields, $folder = "") {
 		if ($folder != "") {
 			$response = $this->sendPatchRequest($this->baseURL . 'users/' . $mailbox . '/mailFolders/'.$folder.'/messages/' . $id , json_encode($Fields), array('Content-type: application/json'));
@@ -336,8 +349,8 @@ class graphMailer {
 			return $response;
 		}
 	}
-	
-	function getEvents($mailbox, $filter = "") {		
+
+	function getEvents($mailbox, $filter = "") {
 		if ($filter != "") $filter = str_replace(":", "%3A", $filter);
 		if ($filter != "") $filter = str_replace("/", "%2F", $filter);
 		if ($filter != "") $filter = "?".str_replace(" ", "%20", $filter);
@@ -354,7 +367,7 @@ class graphMailer {
     }
 
     function sendDeleteRequest($URL) {
-echo $URL.PHP_EOL;
+        echo $URL.PHP_EOL;
         $ch = curl_init($URL);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
         curl_setopt($ch, CURLOPT_HTTPHEADER, array('Authorization: Bearer ' . $this->Token, 'Content-Type: application/json'));
@@ -365,7 +378,7 @@ echo $URL.PHP_EOL;
     }
 
     function sendPostRequest($URL, $Fields, $Headers = false) {
-echo $URL.PHP_EOL;
+        echo $URL.PHP_EOL;
         $ch = curl_init($URL);
         curl_setopt($ch, CURLOPT_POST, 1);
         if ($Fields) curl_setopt($ch, CURLOPT_POSTFIELDS, $Fields);
@@ -381,7 +394,7 @@ echo $URL.PHP_EOL;
     }
 
     function sendGetRequest($URL) {
-echo $URL.PHP_EOL;
+        echo $URL.PHP_EOL;
         $ch = curl_init($URL);
         curl_setopt($ch, CURLOPT_HTTPHEADER, array('Authorization: Bearer ' . $this->Token, 'Content-Type: application/json'));
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -391,7 +404,7 @@ echo $URL.PHP_EOL;
     }
 
     function sendPatchRequest($URL, $Fields, $Headers = false) {
-echo $URL.PHP_EOL;
+        echo $URL.PHP_EOL;
         $ch = curl_init($URL);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PATCH');
         if ($Fields) curl_setopt($ch, CURLOPT_POSTFIELDS, $Fields);
